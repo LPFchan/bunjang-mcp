@@ -7,19 +7,17 @@ import os
 from typing import Annotated
 from urllib.parse import parse_qs
 
+import uvicorn
 from mcp.server import CacheHint, MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
 from starlette.responses import JSONResponse
-import uvicorn
 
-from joongna_mcp.client import DEFAULT_USER_AGENT, JoongnaClient
-from joongna_mcp.service import JoongnaPriceService
-from joongna_mcp.models import JoongnaSearchKeywordResult, JoongnaSearchPriceResult
+from bunjang_mcp.client import DEFAULT_USER_AGENT, BunjangClient
+from bunjang_mcp.models import BunjangSearchResult
+from bunjang_mcp.service import BunjangService
 
-
-_service: JoongnaPriceService | None = None
-
+_service: BunjangService | None = None
 
 
 def _build_transport_security() -> TransportSecuritySettings:
@@ -31,7 +29,10 @@ def _build_transport_security() -> TransportSecuritySettings:
 class _CORSMiddleware:
     def __init__(self, app):
         self.app = app
-        raw = os.environ.get("ALLOWED_ORIGINS", os.environ.get("ALLOWED_ORIGIN", "https://chat.lost.plus"))
+        raw = os.environ.get(
+            "ALLOWED_ORIGINS",
+            os.environ.get("ALLOWED_ORIGIN", "https://chat.lost.plus"),
+        )
         self.allowed_origins = [o.strip() for o in raw.split(",") if o.strip()]
         self.cors_methods = b"GET, POST, DELETE, OPTIONS"
         self.cors_allow_headers = b"authorization, content-type, accept, mcp-session-id, mcp-protocol-version, mcp-method, mcp-name, mcp-param-*, last-event-id, x-api-key"
@@ -63,10 +64,16 @@ class _CORSMiddleware:
                 (b"access-control-expose-headers", self.cors_expose_headers),
             ]
             if matched:
-                resp_headers.insert(0, (b"access-control-allow-origin", matched.encode()))
+                resp_headers.insert(
+                    0, (b"access-control-allow-origin", matched.encode())
+                )
             elif origin:
-                resp_headers.insert(0, (b"access-control-allow-origin", origin.encode()))
-            await send({"type": "http.response.start", "status": 204, "headers": resp_headers})
+                resp_headers.insert(
+                    0, (b"access-control-allow-origin", origin.encode())
+                )
+            await send(
+                {"type": "http.response.start", "status": 204, "headers": resp_headers}
+            )
             await send({"type": "http.response.body", "body": b""})
             return
 
@@ -77,7 +84,9 @@ class _CORSMiddleware:
                     hlist.append((b"access-control-allow-origin", matched.encode()))
                 elif origin:
                     hlist.append((b"access-control-allow-origin", origin.encode()))
-                hlist.append((b"access-control-expose-headers", self.cors_expose_headers))
+                hlist.append(
+                    (b"access-control-expose-headers", self.cors_expose_headers)
+                )
                 hlist.append((b"vary", b"Origin"))
                 message["headers"] = hlist
             await send(message)
@@ -111,7 +120,9 @@ class _AuthMiddleware:
             await self.app(scope, receive, send)
             return
 
-        token_values = parse_qs(scope.get("query_string", b"").decode()).get("token", [])
+        token_values = parse_qs(scope.get("query_string", b"").decode()).get(
+            "token", []
+        )
         if self.tokens & set(token_values):
             await self.app(scope, receive, send)
             return
@@ -123,7 +134,13 @@ class _AuthMiddleware:
             return
 
         body = json.dumps({"error": "Unauthorized"}).encode()
-        await send({"type": "http.response.start", "status": 401, "headers": [(b"content-type", b"application/json")]})
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
 
 
@@ -131,18 +148,17 @@ class _AuthMiddleware:
 async def mcp_lifespan(_: MCPServer):
     global _service
 
-    client = JoongnaClient(
-        base_url=os.environ.get("JOONGNA_BASE_URL", "https://web.joongna.com"),
-        product_api_base_url=os.environ.get(
-            "JOONGNA_PRODUCT_API_BASE_URL",
-            "https://product-api.joongna.com",
+    client = BunjangClient(
+        base_url=os.environ.get("BUNJANG_BASE_URL", "https://m.bunjang.co.kr"),
+        api_base_url=os.environ.get(
+            "BUNJANG_API_BASE_URL", "https://api.bunjang.co.kr"
         ),
-        timeout_seconds=float(os.environ.get("JOONGNA_TIMEOUT_SECONDS", "20")),
-        user_agent=os.environ.get("JOONGNA_USER_AGENT", DEFAULT_USER_AGENT),
+        timeout_seconds=float(os.environ.get("BUNJANG_TIMEOUT_SECONDS", "20")),
+        user_agent=os.environ.get("BUNJANG_USER_AGENT", DEFAULT_USER_AGENT),
     )
-    _service = JoongnaPriceService(
+    _service = BunjangService(
         client,
-        cache_ttl_seconds=int(os.environ.get("JOONGNA_CACHE_TTL_SECONDS", "300")),
+        cache_ttl_seconds=int(os.environ.get("BUNJANG_CACHE_TTL_SECONDS", "300")),
     )
 
     try:
@@ -154,7 +170,7 @@ async def mcp_lifespan(_: MCPServer):
 
 
 mcp = MCPServer(
-    "joongna-mcp",
+    "bunjang-mcp",
     version="0.1.0",
     lifespan=mcp_lifespan,
     cache_hints={
@@ -165,82 +181,98 @@ mcp = MCPServer(
 
 
 @mcp.tool()
-async def joongna_search_price(
+async def bunjang_search_price(
     query: Annotated[
         str,
-        Field(description="Natural-language question or device name to search on Joongna"),
+        Field(
+            description="Natural-language question or device name to search on Bunjang"
+        ),
     ],
     search_word: Annotated[
         str | None,
         Field(
             default=None,
-            description="Optional explicit Joongna search term override, ideally in Korean",
+            description="Optional explicit Bunjang search term override, ideally in Korean",
         ),
     ] = None,
     max_listings: Annotated[
         int,
-        Field(default=10, ge=1, le=20, description="Maximum listings to return per dataset"),
+        Field(default=10, ge=1, le=60, description="Maximum listings to return"),
     ] = 10,
+    include_details: Annotated[
+        bool,
+        Field(
+            default=True, description="Fetch descriptions and original-size image URLs"
+        ),
+    ] = True,
     force_refresh: Annotated[
         bool,
         Field(default=False, description="Bypass the in-memory cache for this request"),
     ] = False,
-) -> JoongnaSearchPriceResult:
-    """Return Joongna price data and listings with descriptions and product images."""
+) -> BunjangSearchResult:
+    """Summarize prices in Bunjang's current search sample and return its listings."""
     service = _require_service()
     return await service.search(
         query=query,
         search_word=search_word,
         max_listings=max_listings,
+        include_details=include_details,
         force_refresh=force_refresh,
     )
 
 
 @mcp.tool()
-async def joongna_search_keyword(
+async def bunjang_search_keyword(
     query: Annotated[
         str,
-        Field(description="Product name to search for on Joongna"),
+        Field(description="Product name to search for on Bunjang"),
     ],
     search_word: Annotated[
         str | None,
         Field(
             default=None,
-            description="Optional explicit Joongna search term override, ideally in Korean",
+            description="Optional explicit Bunjang search term override, ideally in Korean",
         ),
     ] = None,
     max_listings: Annotated[
         int,
-        Field(default=20, ge=1, le=100, description="Maximum listings to return"),
+        Field(default=20, ge=1, le=60, description="Maximum listings to return"),
     ] = 20,
+    include_details: Annotated[
+        bool,
+        Field(
+            default=True, description="Fetch descriptions and original-size image URLs"
+        ),
+    ] = True,
     force_refresh: Annotated[
         bool,
         Field(default=False, description="Bypass the in-memory cache for this request"),
     ] = False,
-) -> JoongnaSearchKeywordResult:
-    """Return Joongna listings, including sold-out items, descriptions, and product images."""
+) -> BunjangSearchResult:
+    """Return Bunjang keyword-search listings with optional detail enrichment."""
     service = _require_service()
-    return await service.search_keyword(
+    return await service.search(
         query=query,
         search_word=search_word,
         max_listings=max_listings,
+        include_details=include_details,
         force_refresh=force_refresh,
     )
 
 
-def _require_service() -> JoongnaPriceService:
+def _require_service() -> BunjangService:
     if _service is None:
-        raise RuntimeError("Joongna price service is not ready")
+        raise RuntimeError("Bunjang service is not ready")
     return _service
 
 
 async def index(_: object) -> JSONResponse:
     return JSONResponse(
         {
-            "name": "joongna-mcp",
+            "name": "bunjang-mcp",
             "mcp_path": "/mcp",
             "healthz": "/healthz",
-            "tools": ["joongna_search_price", "joongna_search_keyword"],
+            "tools": ["bunjang_search_price", "bunjang_search_keyword"],
         }
     )
 
@@ -261,7 +293,7 @@ async def health_route(request):
     return await healthz(None)
 
 
-_raw_tokens = os.environ.get("JOONGNA_AUTH_TOKEN")
+_raw_tokens = os.environ.get("BUNJANG_AUTH_TOKEN")
 _auth_tokens: list[str] | None = None
 if _raw_tokens:
     _auth_tokens = [t.strip() for t in _raw_tokens.split(",") if t.strip()]
@@ -283,11 +315,10 @@ _cors_auth_app = _CORSMiddleware(
 async def app(scope, receive, send):
     if scope["type"] == "http":
         path = scope.get("path", "")
-        if scope["method"] == "POST":
-            if path.rstrip("/") == "":
-                scope["path"] = "/mcp"
-            elif path != "/mcp" and path.rstrip("/") == "/mcp":
-                scope["path"] = "/mcp"
+        if scope["method"] == "POST" and (
+            path.rstrip("/") == "" or path != "/mcp" and path.rstrip("/") == "/mcp"
+        ):
+            scope["path"] = "/mcp"
     await _cors_auth_app(scope, receive, send)
 
 

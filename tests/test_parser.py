@@ -1,173 +1,105 @@
 from __future__ import annotations
 
-import json
-
-from joongna_mcp.parser import parse_product_detail, parse_search_price_page
+from bunjang_mcp.parser import parse_product_detail, parse_search_response
 
 
-def test_parse_search_price_page_extracts_summary_history_and_listings() -> None:
-    bid_query = {
-        "state": {
+def test_parse_search_response_filters_external_ads_and_summarizes_products() -> None:
+    result = parse_search_response(
+        {
             "data": {
-                "data": {
-                    "searchKeyword": "아이폰13미니",
-                    "selectExposureKeyword": "아이폰",
-                    "selectModelName": "아이폰13미니",
-                    "selectOptionName": "",
-                    "emptyResult": None,
-                    "productPrice": {
-                        "linePrices": [{"date": "2026-04-15", "avgPrice": 285000}],
-                        "scatterPrices": [
-                            {
-                                "dateHour": "2026-04-15 01:00:00",
-                                "priceCounts": [{"price": 280000, "count": 1}],
-                            }
-                        ],
-                    },
-                    "items": [
+                "searchSpec": {
+                    "uiBlockList": [
                         {
-                            "seq": 228498566,
-                            "price": 285000,
-                            "url": "https://img2.joongna.com/media/original/iphone13mini.jpg",
-                            "title": "아이폰13미니 128 그린 S급 풀박스",
-                            "sortDate": "2026-05-14 13:01:03",
-                            "mainLocationName": None,
-                            "parcelFee": 0,
-                            "chatCount": 0,
-                            "wishCount": 0,
-                            "pickupBadgeFlag": False,
-                            "certifySellerFlag": False,
-                            "articleUrl": None,
+                            "blockType": "productList.grid.main",
+                            "searchResponse": {
+                                "totalCount": 2960,
+                                "data": [
+                                    {
+                                        "pid": 431514555,
+                                        "name": "아이폰 14pro 판매 퍼플색상",
+                                        "price": 430000,
+                                        "status": "SELLING",
+                                        "productImage": "https://media.bunjang.co.kr/product/431514555_1_1789318294_w{res}.jpg",
+                                        "shop": {
+                                            "uid": 85864648,
+                                            "isOfficialSeller": False,
+                                        },
+                                        "favoriteCount": 2,
+                                        "buntalkCount": 1,
+                                        "updatedAt": "2026-09-13T16:51:10Z",
+                                        "care": True,
+                                        "ad": False,
+                                        "type": "PRODUCT",
+                                    },
+                                    {
+                                        "pid": 429730308,
+                                        "name": "아이폰 14 Pro Max 256GB",
+                                        "price": 820000,
+                                        "type": "PRODUCT",
+                                    },
+                                    {
+                                        "name": "외부 광고",
+                                        "price": 912000,
+                                        "type": "EXT_AD",
+                                    },
+                                ],
+                            },
                         }
-                    ],
+                    ]
                 }
             }
         },
-        "queryKey": ["postProductPriceScatterPlot", "BID", {"searchWord": "아이폰13미니", "priceType": 0}],
-    }
-    execution_query = {
-        "state": {
-            "data": {
-                "data": {
-                    "searchKeyword": "아이폰13미니",
-                    "selectExposureKeyword": "아이폰",
-                    "selectModelName": "아이폰13미니",
-                    "selectOptionName": "",
-                    "emptyResult": None,
-                    "productPrice": {
-                        "linePrices": [{"date": "2026-04-15", "avgPrice": 260000}],
-                        "scatterPrices": [
-                            {
-                                "dateHour": "2026-04-15 01:00:00",
-                                "priceCounts": [{"price": 255000, "count": 1}],
-                            }
-                        ],
-                    },
-                    "items": [
-                        {
-                            "seq": 228498566,
-                            "price": 285000,
-                            "url": "https://img2.joongna.com/media/original/iphone13mini.jpg",
-                            "title": "아이폰13미니 128 그린 S급 풀박스",
-                            "sortDate": "2026-05-14 13:01:03",
-                            "mainLocationName": None,
-                            "parcelFee": 0,
-                            "chatCount": 0,
-                            "wishCount": 0,
-                            "pickupBadgeFlag": False,
-                            "certifySellerFlag": False,
-                            "articleUrl": None,
-                        }
-                    ],
-                }
-            }
-        },
-        "queryKey": [
-            "postProductPriceScatterPlot",
-            "EXECUTION",
-            {"searchWord": "아이폰13미니", "priceType": 1},
-        ],
-    }
-
-    html = "".join(
-        [
-            '<span>평균 가격</span><span>379,650원</span>',
-            '<span>가장 높은 가격</span><span>650,000원</span>',
-            '<span>가장 낮은 가격</span><span>5,000원</span>',
-            _next_chunk({"state": {"queries": [bid_query]}}),
-            _next_chunk({"state": {"queries": [execution_query]}}),
-        ]
+        query="how much is an iPhone 14 Pro?",
+        search_word="아이폰14프로",
+        source_url="https://m.bunjang.co.kr/keywords/test",
+        fetched_at="2026-09-14T00:00:00+00:00",
     )
 
-    result = parse_search_price_page(
-        html,
-        query="how much does used iPhone 13 mini go these days?",
-        search_word="아이폰13미니",
-        source_url="https://web.joongna.com/search-price/%EC%95%84%EC%9D%B4%ED%8F%B013%EB%AF%B8%EB%8B%88",
-        fetched_at="2026-05-14T12:00:00+00:00",
+    assert result.total_count == 2960
+    assert result.summary.sample_size == 2
+    assert result.summary.average_price_krw == 625000
+    assert result.summary.highest_price_krw == 820000
+    assert result.summary.lowest_price_krw == 430000
+    assert len(result.listings) == 2
+    listing = result.listings[0]
+    assert listing.product_id == 431514555
+    assert listing.listing_url == "https://m.bunjang.co.kr/products/431514555"
+    assert listing.thumbnail_url == (
+        "https://media.bunjang.co.kr/product/431514555_1_1789318294_w360.jpg"
     )
-
-    assert result.summary.average_price_krw == 379650
-    assert result.summary.highest_price_krw == 650000
-    assert result.summary.lowest_price_krw == 5000
-
-    assert result.registered_price_history is not None
-    assert result.registered_price_history.label_ko == "등록가"
-    assert result.registered_price_history.daily_average_prices[0].average_price_krw == 285000
-
-    assert result.sold_price_history is not None
-    assert result.sold_price_history.label_ko == "판매가"
-    assert result.sold_price_history.daily_average_prices[0].average_price_krw == 260000
-
-    assert result.metadata is not None
-    assert result.metadata.search_keyword == "아이폰13미니"
-    assert result.metadata.selected_model_name == "아이폰13미니"
-
-    assert result.available_listings[0].listing_url == "https://web.joongna.com/product/228498566"
-    assert result.available_listings[0].thumbnail_url == "https://img2.joongna.com/media/original/iphone13mini.jpg"
-    assert result.available_listings[0].image_urls == [
-        "https://img2.joongna.com/media/original/iphone13mini.jpg"
-    ]
-    assert result.available_listings[0].title == "아이폰13미니 128 그린 S급 풀박스"
+    assert listing.seller_id == 85864648
+    assert listing.care is True
 
 
-def test_parse_product_detail_extracts_description_and_ordered_images() -> None:
+def test_parse_product_detail_generates_original_images_and_metadata() -> None:
     result = parse_product_detail(
         {
             "data": {
-                "productDescription": "판매자가 작성한 설명\n두 번째 줄",
-                "media": [
-                    {
-                        "mediaType": 0,
-                        "originUrl": "https://img2.joongna.com/first.jpg",
-                        "mediaUrl": "https://img2.joongna.com/first-watermarked.jpg",
-                    },
-                    {
-                        "mediaType": 1,
-                        "originUrl": "https://img2.joongna.com/video.mp4",
-                    },
-                ],
-                "descriptionMedia": [
-                    {
-                        "mediaType": 0,
-                        "originUrl": "https://img2.joongna.com/second.jpg",
-                    },
-                    {
-                        "mediaType": 0,
-                        "originUrl": "https://img2.joongna.com/first.jpg",
-                    },
-                ],
+                "product": {
+                    "description": "판매자가 작성한 설명",
+                    "imageUrl": "https://media.bunjang.co.kr/product/431514555_{cnt}_1789318294_w{res}.jpg",
+                    "imageCount": 3,
+                    "condition": "DAMAGED",
+                    "metrics": {"viewCount": 6},
+                    "category": {"name": "스마트폰"},
+                    "brand": {"name": "애플"},
+                    "trade": {"freeShipping": True, "inPerson": False},
+                },
+                "shop": {"name": "인생은낭만있게77"},
             }
         }
     )
 
-    assert result.description == "판매자가 작성한 설명\n두 번째 줄"
+    assert result.description == "판매자가 작성한 설명"
     assert result.image_urls == [
-        "https://img2.joongna.com/first.jpg",
-        "https://img2.joongna.com/second.jpg",
+        "https://media.bunjang.co.kr/product/431514555_1_1789318294.jpg",
+        "https://media.bunjang.co.kr/product/431514555_2_1789318294.jpg",
+        "https://media.bunjang.co.kr/product/431514555_3_1789318294.jpg",
     ]
-
-
-def _next_chunk(payload_obj: dict) -> str:
-    encoded = json.dumps(f"22:{json.dumps(payload_obj, ensure_ascii=False, separators=(',', ':'))}")
-    return f"<script>self.__next_f.push([1,{encoded}])</script>"
+    assert result.condition == "DAMAGED"
+    assert result.category_name == "스마트폰"
+    assert result.brand_name == "애플"
+    assert result.seller_name == "인생은낭만있게77"
+    assert result.view_count == 6
+    assert result.free_shipping is True
+    assert result.in_person is False

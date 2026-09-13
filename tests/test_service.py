@@ -1,87 +1,91 @@
 from __future__ import annotations
 
 import asyncio
-import json
 
-from joongna_mcp.service import JoongnaPriceService
+from bunjang_mcp.service import BunjangService
 
-
-LISTING = {
-    "seq": 230894836,
-    "price": 260000,
-    "url": "https://img2.joongna.com/search-thumbnail.jpg",
-    "title": "아이폰13미니 128GB",
+SEARCH_PAYLOAD = {
+    "data": {
+        "searchSpec": {
+            "uiBlockList": [
+                {
+                    "blockType": "productList.grid.main",
+                    "searchResponse": {
+                        "totalCount": 1,
+                        "data": [
+                            {
+                                "pid": 431514555,
+                                "name": "아이폰 14pro 판매 퍼플색상",
+                                "price": 430000,
+                                "productImage": "https://media.bunjang.co.kr/product/431514555_1_stamp_w{res}.jpg",
+                                "type": "PRODUCT",
+                            }
+                        ],
+                    },
+                }
+            ]
+        }
+    }
 }
 
 PRODUCT_DETAIL = {
     "data": {
-        "productSeq": 230894836,
-        "productDescription": "판매자가 작성한 상품 설명",
-        "media": [
-            {"mediaType": 0, "originUrl": "https://img2.joongna.com/full-1.jpg"},
-            {"mediaType": 0, "originUrl": "https://img2.joongna.com/full-2.jpg"},
-        ],
+        "product": {
+            "description": "판매자가 작성한 상품 설명",
+            "imageUrl": "https://media.bunjang.co.kr/product/431514555_{cnt}_stamp_w{res}.jpg",
+            "imageCount": 2,
+        },
+        "shop": {},
     }
 }
 
 
 class FakeClient:
     def __init__(self) -> None:
+        self.search_calls = 0
         self.detail_calls: list[int] = []
 
-    async def fetch_search_page(self, search_word: str) -> tuple[str, str]:
-        query = {
-            "state": {
-                "data": {
-                    "data": {
-                        "searchKeyword": search_word,
-                        "productPrice": {"linePrices": [], "scatterPrices": []},
-                        "items": [LISTING],
-                    }
-                }
-            },
-            "queryKey": ["postProductPriceScatterPlot", "BID"],
-        }
-        return "https://web.joongna.com/search-price/test", _next_chunk(
-            {"state": {"queries": [query]}}
-        )
+    async def fetch_search(self, search_word: str) -> tuple[str, dict]:
+        self.search_calls += 1
+        return f"https://m.bunjang.co.kr/keywords/{search_word}", SEARCH_PAYLOAD
 
-    async def fetch_search_keyword_page(self, search_word: str) -> tuple[str, str]:
-        return "https://web.joongna.com/search/test", _next_chunk({"items": [LISTING]})
-
-    async def fetch_product_detail(self, sequence: int) -> dict:
-        self.detail_calls.append(sequence)
+    async def fetch_product_detail(self, product_id: int) -> dict:
+        self.detail_calls.append(product_id)
         return PRODUCT_DETAIL
 
     async def aclose(self) -> None:
         return None
 
 
-def test_both_search_tools_include_description_and_images_by_default() -> None:
+def test_search_enriches_details_and_reuses_both_caches() -> None:
     async def run() -> None:
         client = FakeClient()
-        service = JoongnaPriceService(client)  # type: ignore[arg-type]
+        service = BunjangService(client)  # type: ignore[arg-type]
 
-        keyword_result = await service.search_keyword(query="아이폰13미니")
-        price_result = await service.search(query="아이폰13미니")
+        first = await service.search(query="아이폰 14 프로")
+        second = await service.search(query="아이폰 14 프로")
 
-        expected_images = [
-            "https://img2.joongna.com/full-1.jpg",
-            "https://img2.joongna.com/full-2.jpg",
+        assert first.from_cache is False
+        assert second.from_cache is True
+        assert first.listings[0].description == "판매자가 작성한 상품 설명"
+        assert first.listings[0].image_urls == [
+            "https://media.bunjang.co.kr/product/431514555_1_stamp.jpg",
+            "https://media.bunjang.co.kr/product/431514555_2_stamp.jpg",
         ]
-        assert keyword_result.listings[0].description == "판매자가 작성한 상품 설명"
-        assert keyword_result.listings[0].image_urls == expected_images
-        assert price_result.available_listings[0].description == "판매자가 작성한 상품 설명"
-        assert price_result.available_listings[0].image_urls == expected_images
-        assert price_result.registered_price_history is not None
-        assert price_result.registered_price_history.listings[0].description == (
-            "판매자가 작성한 상품 설명"
-        )
-        assert client.detail_calls == [230894836]
+        assert client.search_calls == 1
+        assert client.detail_calls == [431514555]
 
     asyncio.run(run())
 
 
-def _next_chunk(payload_obj: dict) -> str:
-    encoded = json.dumps(f"22:{json.dumps(payload_obj, ensure_ascii=False, separators=(',', ':'))}")
-    return f"<script>self.__next_f.push([1,{encoded}])</script>"
+def test_search_can_skip_detail_requests() -> None:
+    async def run() -> None:
+        client = FakeClient()
+        service = BunjangService(client)  # type: ignore[arg-type]
+
+        result = await service.search(query="아이폰 14 프로", include_details=False)
+
+        assert result.listings[0].description is None
+        assert client.detail_calls == []
+
+    asyncio.run(run())

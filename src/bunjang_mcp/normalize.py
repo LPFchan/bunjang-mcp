@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 _PHRASE_REPLACEMENTS: tuple[tuple[str, str], ...] = (
     (r"\bapple watch\b", "애플워치"),
     (r"\bairpods max\b", "에어팟맥스"),

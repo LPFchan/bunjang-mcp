@@ -3,9 +3,9 @@ requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "joongna-mcp"
+name = "bunjang-mcp"
 version = "0.1.0"
-description = "MCP server for Joongna search-price lookups"
+description = "MCP server for Bunjang listing and asking-price searches"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -22,10 +22,10 @@ dev = [
 ]
 
 [project.scripts]
-joongna-mcp = "joongna_mcp.server:main"
+bunjang-mcp = "bunjang_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/joongna_mcp"]
+packages = ["src/bunjang_mcp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
