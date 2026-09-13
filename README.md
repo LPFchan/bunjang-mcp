@@ -21,7 +21,7 @@ python -m venv .venv
 .venv/bin/python -m bunjang_mcp.server
 ```
 
-Or run `docker compose up --build`.
+Or run `docker compose up --build`. Compose publishes the service at `127.0.0.1:8004` so it can run beside the other MCP services on the production host.
 
 The MCP endpoint is `/mcp`; `/healthz` is available without authentication. The server uses the official MCP Python SDK v2 and supports the stateless `2026-07-28` protocol through `server/discover`, with a stateless legacy fallback for clients that still use `initialize`.
 
