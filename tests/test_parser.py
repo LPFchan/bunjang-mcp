@@ -48,18 +48,10 @@ def test_parse_search_response_filters_external_ads_and_summarizes_products() ->
                     ]
                 }
             }
-        },
-        query="how much is an iPhone 14 Pro?",
-        search_word="아이폰14프로",
-        source_url="https://m.bunjang.co.kr/keywords/test",
-        fetched_at="2026-09-14T00:00:00+00:00",
+        }
     )
 
     assert result.total_count == 2960
-    assert result.summary.sample_size == 2
-    assert result.summary.average_price_krw == 625000
-    assert result.summary.highest_price_krw == 820000
-    assert result.summary.lowest_price_krw == 430000
     assert len(result.listings) == 2
     listing = result.listings[0]
     assert listing.product_id == 431514555
@@ -69,6 +61,35 @@ def test_parse_search_response_filters_external_ads_and_summarizes_products() ->
     )
     assert listing.seller_id == 85864648
     assert listing.care is True
+
+
+def test_parse_continuation_search_response() -> None:
+    result = parse_search_response(
+        {
+            "data": {
+                "responses": {
+                    "mainGrid": {
+                        "searchResponse": {
+                            "totalCount": 120,
+                            "cursor": "page-3-cursor",
+                            "data": [
+                                {
+                                    "pid": 428113081,
+                                    "name": "아이폰14프로 256G",
+                                    "price": 651000,
+                                    "type": "PRODUCT",
+                                }
+                            ],
+                        }
+                    }
+                }
+            }
+        }
+    )
+
+    assert result.total_count == 120
+    assert result.next_cursor == "page-3-cursor"
+    assert result.listings[0].product_id == 428113081
 
 
 def test_parse_product_detail_generates_original_images_and_metadata() -> None:

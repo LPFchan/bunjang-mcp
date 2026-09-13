@@ -58,6 +58,14 @@ class ListingDetails(BaseModel):
     in_person: bool | None = None
 
 
+class SearchPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_count: int = 0
+    next_cursor: str | None = None
+    listings: list[Listing] = Field(default_factory=list)
+
+
 class BunjangSearchResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -67,5 +75,8 @@ class BunjangSearchResult(BaseModel):
     fetched_at: str
     from_cache: bool = False
     total_count: int = 0
+    offset: int = 0
+    next_offset: int | None = None
+    has_more: bool = False
     summary: PriceSummary = Field(default_factory=PriceSummary)
     listings: list[Listing] = Field(default_factory=list)

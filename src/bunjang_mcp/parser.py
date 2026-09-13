@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from statistics import fmean
-
 from bunjang_mcp.models import (
-    BunjangSearchResult,
     Listing,
     ListingDetails,
-    PriceSummary,
+    SearchPage,
 )
 
 
@@ -16,31 +13,8 @@ class BunjangParseError(ValueError):
 
 def parse_search_response(
     payload: dict,
-    *,
-    query: str,
-    search_word: str,
-    source_url: str,
-    fetched_at: str,
-) -> BunjangSearchResult:
-    search_spec = (payload.get("data") or {}).get("searchSpec") or {}
-    blocks = search_spec.get("uiBlockList") or []
-    if not isinstance(blocks, list):
-        raise BunjangParseError("Bunjang search response did not contain UI blocks")
-
-    search_response: dict | None = None
-    for block in blocks:
-        if (
-            isinstance(block, dict)
-            and block.get("blockType") == "productList.grid.main"
-        ):
-            candidate = block.get("searchResponse")
-            if isinstance(candidate, dict):
-                search_response = candidate
-                break
-    if search_response is None:
-        raise BunjangParseError(
-            "Bunjang search response did not contain a product grid"
-        )
+) -> SearchPage:
+    search_response = _find_search_response(payload)
 
     raw_items = search_response.get("data") or []
     if not isinstance(raw_items, list):
@@ -53,22 +27,42 @@ def parse_search_response(
         and item.get("type") == "PRODUCT"
         and item.get("pid") is not None
     ]
-    prices = [listing.price_krw for listing in listings]
-
-    return BunjangSearchResult(
-        query=query,
-        search_word=search_word,
-        source_url=source_url,
-        fetched_at=fetched_at,
+    next_cursor = search_response.get("cursor") or search_response.get("nextCursor")
+    return SearchPage(
         total_count=int(search_response.get("totalCount") or len(listings)),
-        summary=PriceSummary(
-            sample_size=len(prices),
-            average_price_krw=round(fmean(prices)) if prices else None,
-            highest_price_krw=max(prices) if prices else None,
-            lowest_price_krw=min(prices) if prices else None,
-        ),
+        next_cursor=str(next_cursor) if next_cursor else None,
         listings=listings,
     )
+
+
+def _find_search_response(payload: dict) -> dict:
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise BunjangParseError("Bunjang search response did not contain data")
+
+    search_spec = data.get("searchSpec")
+    if isinstance(search_spec, dict):
+        blocks = search_spec.get("uiBlockList") or []
+        if not isinstance(blocks, list):
+            raise BunjangParseError("Bunjang search response did not contain UI blocks")
+        for block in blocks:
+            if (
+                isinstance(block, dict)
+                and block.get("blockType") == "productList.grid.main"
+            ):
+                candidate = block.get("searchResponse")
+                if isinstance(candidate, dict):
+                    return candidate
+
+    responses = data.get("responses")
+    if isinstance(responses, dict):
+        main_grid = responses.get("mainGrid")
+        if isinstance(main_grid, dict):
+            candidate = main_grid.get("searchResponse")
+            if isinstance(candidate, dict):
+                return candidate
+
+    raise BunjangParseError("Bunjang search response did not contain a product grid")
 
 
 def _parse_search_listing(item: dict) -> Listing:

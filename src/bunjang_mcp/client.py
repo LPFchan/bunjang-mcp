@@ -41,12 +41,24 @@ class BunjangClient:
     def build_search_url(self, search_word: str) -> str:
         return f"{self._base_url}/keywords/{quote(search_word.strip(), safe='')}"
 
-    async def fetch_search(self, search_word: str) -> tuple[str, dict]:
+    async def fetch_search(
+        self, search_word: str, *, cursor: str | None = None
+    ) -> tuple[str, dict]:
         if not search_word.strip():
             raise BunjangFetchError("search_word must not be blank")
         source_url = self.build_search_url(search_word)
-        api_url = f"{self._api_base_url}/api/search/v8/pw/product/specs/keyword"
-        payload = await self._get_json(api_url, params={"q": search_word})
+        if cursor is None:
+            api_url = f"{self._api_base_url}/api/search/v8/pw/product/specs/keyword"
+            params = {"q": search_word}
+        else:
+            api_url = f"{self._api_base_url}/api/search/v8/web/search"
+            params = {
+                "q": search_word,
+                "policyKey": "pw.product.keyword",
+                "cursor": cursor,
+                "size": "60",
+            }
+        payload = await self._get_json(api_url, params=params)
         return source_url, payload
 
     async def fetch_product_detail(self, product_id: int) -> dict:

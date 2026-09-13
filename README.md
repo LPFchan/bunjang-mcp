@@ -4,12 +4,13 @@ An MCP server for searching public listings on [Bunjang](https://m.bunjang.co.kr
 
 ## Tools
 
-- `bunjang_search_keyword`: returns matching Bunjang listings.
-- `bunjang_search_price`: returns the same listings plus an average, highest, and lowest asking price for the product sample returned by Bunjang.
+- `bunjang_search`: returns matching listings and an average, highest, and lowest asking price for the returned listings.
 
-Both tools return listing URLs, prices, sale status, seller and engagement metadata, seller descriptions, and original-size product image URLs. Set `include_details=false` to skip one detail request per returned listing when speed matters more than descriptions and full images.
+The tool returns listing URLs, prices, sale status, seller and engagement metadata, seller descriptions, and original-size product image URLs. Set `include_details=false` to skip one detail request per returned listing when speed matters more than descriptions and full images.
 
-The summary describes current asking prices in Bunjang's search response. It is not a sold-price history. External shopping ads are excluded from listings and price calculations. Bunjang currently returns at most 60 entries in the initial public search response, so `max_listings` is limited to 60.
+Results default to 20 listings. To continue, pass the returned `next_offset` as the next call's `offset`. `has_more` says whether more listings are available. The service handles Bunjang's internal cursor pagination, crosses its 60-entry upstream page boundaries, and removes repeated promoted products. Since marketplace results change over time, consecutive pages are not a permanent snapshot.
+
+The summary describes current asking prices among the listings returned by that call. It is not a sold-price history. External shopping ads are excluded from listings and price calculations. `max_listings` is limited to 60 per call.
 
 ## Run
 

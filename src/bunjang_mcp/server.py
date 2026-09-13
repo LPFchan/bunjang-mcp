@@ -181,11 +181,11 @@ mcp = MCPServer(
 
 
 @mcp.tool()
-async def bunjang_search_price(
+async def bunjang_search(
     query: Annotated[
         str,
         Field(
-            description="Natural-language question or device name to search on Bunjang"
+            description="Natural-language question or product name to search on Bunjang"
         ),
     ],
     search_word: Annotated[
@@ -195,45 +195,14 @@ async def bunjang_search_price(
             description="Optional explicit Bunjang search term override, ideally in Korean",
         ),
     ] = None,
-    max_listings: Annotated[
+    offset: Annotated[
         int,
-        Field(default=10, ge=1, le=60, description="Maximum listings to return"),
-    ] = 10,
-    include_details: Annotated[
-        bool,
         Field(
-            default=True, description="Fetch descriptions and original-size image URLs"
+            default=0,
+            ge=0,
+            description="Zero-based listing offset; use next_offset from the previous result",
         ),
-    ] = True,
-    force_refresh: Annotated[
-        bool,
-        Field(default=False, description="Bypass the in-memory cache for this request"),
-    ] = False,
-) -> BunjangSearchResult:
-    """Summarize prices in Bunjang's current search sample and return its listings."""
-    service = _require_service()
-    return await service.search(
-        query=query,
-        search_word=search_word,
-        max_listings=max_listings,
-        include_details=include_details,
-        force_refresh=force_refresh,
-    )
-
-
-@mcp.tool()
-async def bunjang_search_keyword(
-    query: Annotated[
-        str,
-        Field(description="Product name to search for on Bunjang"),
-    ],
-    search_word: Annotated[
-        str | None,
-        Field(
-            default=None,
-            description="Optional explicit Bunjang search term override, ideally in Korean",
-        ),
-    ] = None,
+    ] = 0,
     max_listings: Annotated[
         int,
         Field(default=20, ge=1, le=60, description="Maximum listings to return"),
@@ -249,11 +218,12 @@ async def bunjang_search_keyword(
         Field(default=False, description="Bypass the in-memory cache for this request"),
     ] = False,
 ) -> BunjangSearchResult:
-    """Return Bunjang keyword-search listings with optional detail enrichment."""
+    """Search Bunjang listings and summarize their current asking prices."""
     service = _require_service()
     return await service.search(
         query=query,
         search_word=search_word,
+        offset=offset,
         max_listings=max_listings,
         include_details=include_details,
         force_refresh=force_refresh,
@@ -272,7 +242,7 @@ async def index(_: object) -> JSONResponse:
             "name": "bunjang-mcp",
             "mcp_path": "/mcp",
             "healthz": "/healthz",
-            "tools": ["bunjang_search_price", "bunjang_search_keyword"],
+            "tools": ["bunjang_search"],
         }
     )
 
