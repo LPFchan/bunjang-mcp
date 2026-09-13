@@ -1,4 +1,4 @@
-from joongna_search_price_mcp.normalize import normalize_search_word
+from joongna_mcp.normalize import normalize_search_word
 
 
 def test_normalize_english_natural_language_query() -> None:

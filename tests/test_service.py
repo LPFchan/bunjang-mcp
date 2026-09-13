@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from joongna_search_price_mcp.service import JoongnaPriceService
+from joongna_mcp.service import JoongnaPriceService
 
 
 LISTING = {

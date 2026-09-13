@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "joongna-search-price-mcp"
+name = "joongna-mcp"
 version = "0.1.0"
 description = "MCP server for Joongna search-price lookups"
 readme = "README.md"
@@ -22,10 +22,10 @@ dev = [
 ]
 
 [project.scripts]
-joongna-search-price-mcp = "joongna_search_price_mcp.server:main"
+joongna-mcp = "joongna_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/joongna_search_price_mcp"]
+packages = ["src/joongna_mcp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

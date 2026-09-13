@@ -13,9 +13,9 @@ from pydantic import Field
 from starlette.responses import JSONResponse
 import uvicorn
 
-from joongna_search_price_mcp.client import DEFAULT_USER_AGENT, JoongnaClient
-from joongna_search_price_mcp.service import JoongnaPriceService
-from joongna_search_price_mcp.models import JoongnaSearchKeywordResult, JoongnaSearchPriceResult
+from joongna_mcp.client import DEFAULT_USER_AGENT, JoongnaClient
+from joongna_mcp.service import JoongnaPriceService
+from joongna_mcp.models import JoongnaSearchKeywordResult, JoongnaSearchPriceResult
 
 
 _service: JoongnaPriceService | None = None
@@ -154,7 +154,7 @@ async def mcp_lifespan(_: MCPServer):
 
 
 mcp = MCPServer(
-    "joongna-search-price",
+    "joongna-mcp",
     version="0.1.0",
     lifespan=mcp_lifespan,
     cache_hints={
@@ -237,7 +237,7 @@ def _require_service() -> JoongnaPriceService:
 async def index(_: object) -> JSONResponse:
     return JSONResponse(
         {
-            "name": "joongna-search-price-mcp",
+            "name": "joongna-mcp",
             "mcp_path": "/mcp",
             "healthz": "/healthz",
             "tools": ["joongna_search_price", "joongna_search_keyword"],

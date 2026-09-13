@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from joongna_search_price_mcp.parser import parse_product_detail, parse_search_price_page
+from joongna_mcp.parser import parse_product_detail, parse_search_price_page
 
 
 def test_parse_search_price_page_extracts_summary_history_and_listings() -> None:

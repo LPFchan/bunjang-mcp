@@ -1,5 +1,5 @@
 services:
-  joongna-search-price-mcp:
+  joongna-mcp:
     build: .
     restart: unless-stopped
     ports:

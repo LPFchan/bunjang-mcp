@@ -5,15 +5,15 @@ from datetime import datetime, timezone
 import asyncio
 import time
 
-from joongna_search_price_mcp.client import JoongnaClient, JoongnaFetchError
-from joongna_search_price_mcp.models import (
+from joongna_mcp.client import JoongnaClient, JoongnaFetchError
+from joongna_mcp.models import (
     JoongnaSearchKeywordResult,
     JoongnaSearchPriceResult,
     Listing,
     ListingDetails,
 )
-from joongna_search_price_mcp.normalize import normalize_search_word
-from joongna_search_price_mcp.parser import (
+from joongna_mcp.normalize import normalize_search_word
+from joongna_mcp.parser import (
     JoongnaParseError,
     parse_product_detail,
     parse_search_keyword_page,

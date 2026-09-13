@@ -5,7 +5,7 @@ import json
 import re
 from collections.abc import Iterable
 
-from joongna_search_price_mcp.models import (
+from joongna_mcp.models import (
     DailyAveragePoint,
     HourlyScatterPoint,
     JoongnaSearchKeywordResult,
