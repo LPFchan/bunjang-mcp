@@ -26,18 +26,21 @@ Or run `docker compose up --build`. Compose publishes the service at `127.0.0.1:
 
 The MCP endpoint is `/mcp`; `/healthz` is available without authentication. The server uses the official MCP Python SDK v2 and supports the stateless `2026-07-28` protocol through `server/discover`, with a stateless legacy fallback for clients that still use `initialize`.
 
+The production endpoint is `https://bunjang.lost.plus/mcp`. The shared Common
+Auth gateway protects it with the `bunjang` scope. Send a Common Auth token as
+`Authorization: Bearer <token>` or `X-API-Key: <token>`. The backend does not
+authenticate requests itself and must remain bound to localhost behind the
+gateway.
+
 ## Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | Listen address |
 | `PORT` | `8000` | Listen port inside the container |
-| `BUNJANG_AUTH_TOKEN` | unset | Optional comma-separated bearer, query, or URL-path tokens |
 | `BUNJANG_BASE_URL` | `https://m.bunjang.co.kr` | Public listing-page base URL |
 | `BUNJANG_API_BASE_URL` | `https://api.bunjang.co.kr` | Public JSON API base URL |
 | `BUNJANG_CACHE_TTL_SECONDS` | `300` | In-memory search and detail cache lifetime |
 | `BUNJANG_TIMEOUT_SECONDS` | `20` | Upstream request timeout |
 | `BUNJANG_USER_AGENT` | Safari-compatible value | Upstream HTTP user agent |
 | `ALLOWED_ORIGINS` | `https://chat.lost.plus` | Comma-separated CORS origin patterns |
-
-The Compose service intentionally leaves `BUNJANG_AUTH_TOKEN` unset because public ChatGPT connectors cannot use this server's fixed bearer-token authentication. The tools only read public Bunjang listings.
