@@ -36,7 +36,7 @@ gateway.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `HOST` | `0.0.0.0` | Listen address |
+| `HOST` | `127.0.0.1` | Listen address; Docker explicitly uses `0.0.0.0` inside the container |
 | `PORT` | `8000` | Listen port inside the container |
 | `BUNJANG_BASE_URL` | `https://m.bunjang.co.kr` | Public listing-page base URL |
 | `BUNJANG_API_BASE_URL` | `https://api.bunjang.co.kr` | Public JSON API base URL |
