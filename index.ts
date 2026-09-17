@@ -1,3 +1,4 @@
+import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 
 // bunjang-mcp Worker: MCP server on Cloudflare Workers, port of the
 // Python bunjang-mcp (Bunjang marketplace search). Authenticates machine
@@ -7,9 +8,6 @@
 // Unlike the Python server there is NO in-memory cache: module-level state
 // does not reliably persist between Worker requests, so every tool call
 // fetches fresh data and always reports from_cache=false.
-
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
 
 export interface Env {
@@ -25,25 +23,6 @@ const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
 
 const DETAIL_CONCURRENCY = 8;
-
-// --- protocol shim ------------------------------------------------------------
-
-// ChatGPT's MCP client now speaks protocol 2026-07-28, which the pinned SDK
-// (@modelcontextprotocol/sdk 1.30.0) does not recognize: its transport hard-400s
-// any request whose mcp-protocol-version header is not in its built-in list
-// (max 2025-11-25). Version negotiation on initialize is graceful (the server
-// responds with its own version and the client retries), so we only need to
-// accept the newer header long enough for negotiation to run. Treat any
-// unknown version as the SDK's latest and let it negotiate down.
-const SDK_LATEST_PROTOCOL_VERSION = "2025-11-25";
-
-function rewriteProtocolVersionHeader(request: Request): Request {
-  const version = request.headers.get("mcp-protocol-version");
-  if (version === null || version <= SDK_LATEST_PROTOCOL_VERSION) return request;
-  const headers = new Headers(request.headers);
-  headers.set("mcp-protocol-version", SDK_LATEST_PROTOCOL_VERSION);
-  return new Request(request, { headers });
-}
 
 // --- auth --------------------------------------------------------------------
 
@@ -625,44 +604,39 @@ function text(value: unknown): { content: Array<{ type: "text"; text: string }> 
 function buildServer(env: Env): McpServer {
   const server = new McpServer({ name: "bunjang-mcp", version: "0.1.0" });
 
-  server.tool(
-    "bunjang_search",
-    "Search Bunjang listings and summarize their current asking prices. Returns matching listings plus average, highest, and lowest asking price for the returned listings. To paginate, pass the returned next_offset as the next call's offset; has_more says whether more listings are available. The in-memory cache from the Python server does not exist on Workers: every call fetches fresh data and from_cache is always false.",
-    {
-      query: z.string().describe("Natural-language question or product name to search on Bunjang"),
-      search_word: z
-        .string()
-        .optional()
-        .describe("Optional explicit Bunjang search term override, ideally in Korean"),
-      offset: z
-        .number()
-        .int()
-        .min(0)
-        .default(0)
-        .describe("Zero-based listing offset; use next_offset from the previous result"),
-      max_listings: z
-        .number()
-        .int()
-        .min(1)
-        .max(60)
-        .default(20)
-        .describe("Maximum listings to return"),
-      include_details: z
-        .boolean()
-        .default(true)
-        .describe("Fetch descriptions and original-size image URLs"),
-    },
-    async ({ query, search_word, offset, max_listings, include_details }) => {
-      const result = await searchListings(env, {
-        query,
-        searchWord: search_word ?? null,
-        offset,
-        maxListings: max_listings,
-        includeDetails: include_details,
-      });
-      return text(result);
-    },
-  );
+  server.registerTool("bunjang_search", { description: "Search Bunjang listings and summarize their current asking prices. Returns matching listings plus average, highest, and lowest asking price for the returned listings. To paginate, pass the returned next_offset as the next call's offset; has_more says whether more listings are available. The in-memory cache from the Python server does not exist on Workers: every call fetches fresh data and from_cache is always false.", inputSchema: z.object({
+              query: z.string().describe("Natural-language question or product name to search on Bunjang"),
+              search_word: z
+                .string()
+                .optional()
+                .describe("Optional explicit Bunjang search term override, ideally in Korean"),
+              offset: z
+                .number()
+                .int()
+                .min(0)
+                .default(0)
+                .describe("Zero-based listing offset; use next_offset from the previous result"),
+              max_listings: z
+                .number()
+                .int()
+                .min(1)
+                .max(60)
+                .default(20)
+                .describe("Maximum listings to return"),
+              include_details: z
+                .boolean()
+                .default(true)
+                .describe("Fetch descriptions and original-size image URLs"),
+            }) }, async ({ query, search_word, offset, max_listings, include_details }) => {
+              const result = await searchListings(env, {
+                query,
+                searchWord: search_word ?? null,
+                offset,
+                maxListings: max_listings,
+                includeDetails: include_details,
+              });
+              return text(result);
+            });
 
   return server;
 }
@@ -746,15 +720,11 @@ export default {
       });
     }
 
-    // Accept newer protocol-version headers (e.g. ChatGPT's 2026-07-28) that the
-    // pinned SDK would reject with 400; negotiation happens on initialize.
-    request = rewriteProtocolVersionHeader(request);
-
-    // Stateless MCP: fresh server + transport per request (no session state).
-    const server = buildServer(env);
-    const transport = new WebStandardStreamableHTTPServerTransport();
-    await server.connect(transport);
-    const response = await transport.handleRequest(request);
+    // Dual-era MCP: createMcpHandler serves 2026-07-28 (stateless, per-request)
+    // and legacy 2025-era clients through the stateless handshake fallback.
+    // A fresh handler per request closes over env; each McpServer instance the
+    // factory builds is itself per-request.
+    const response = await createMcpHandler(() => buildServer(env)).fetch(request);
     // Attach CORS headers to the MCP response.
     const headers = new Headers(response.headers);
     for (const [k, v] of Object.entries(corsHeaders(origin))) headers.set(k, v);
