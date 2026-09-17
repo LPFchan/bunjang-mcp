@@ -1,0 +1,21 @@
+name = "bunjang"
+main = "index.ts"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+AUTH_URL = "https://auth.lost.plus"
+TOKEN_SCOPE = "bunjang"
+BUNJANG_BASE_URL = "https://m.bunjang.co.kr"
+BUNJANG_API_BASE_URL = "https://api.bunjang.co.kr"
+BUNJANG_TIMEOUT_SECONDS = "20"
+BUNJANG_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
+
+# Route bunjang.lost.plus MCP traffic to this Worker.
+# The OCI gateway still handles other paths until DNS is cut over.
+routes = [
+  { pattern = "bunjang.lost.plus/mcp", zone_name = "lost.plus" },
+  { pattern = "bunjang.lost.plus/mcp/*", zone_name = "lost.plus" },
+  { pattern = "bunjang.lost.plus/healthz", zone_name = "lost.plus" },
+  { pattern = "bunjang.lost.plus/.well-known/oauth-protected-resource*", zone_name = "lost.plus" },
+]
