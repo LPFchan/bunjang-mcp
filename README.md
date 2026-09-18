@@ -15,8 +15,16 @@ The summary describes current asking prices among the listings returned by that 
 
 There is no cache. Module-level state does not reliably persist between
 Worker requests, so every call fetches fresh data from Bunjang and always
-reports `from_cache: false`. Detail-enriched calls (`include_details=true`)
-make one upstream request per listing, up to eight at a time.
+reports `from_cache: false`.
+
+Detail-enriched calls (`include_details=true`) make one upstream request per
+listing, up to eight at a time. Cloudflare caps a Worker invocation at 50
+subrequests on the free plan (1000 on paid), shared between the search pages
+and the detail fetches, so about 48 listings per call can be enriched;
+listings past that come back with search-page fields only, and
+`detail_failures` in the result counts them. Measured 2026-09-19:
+`max_listings=60` enriches exactly the first 48, `max_listings=49` enriches
+all 49.
 
 ## Usage
 

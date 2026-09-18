@@ -119,6 +119,7 @@ describe("searchListings", () => {
 
     expect(first.from_cache).toBe(false);
     expect(second.from_cache).toBe(false);
+    expect(first.detail_failures).toBe(0);
     expect(first.search_word).toBe("아이폰14프로");
     expect(first.source_url).toBe(
       "https://m.bunjang.co.kr/keywords/%EC%95%84%EC%9D%B4%ED%8F%B014%ED%94%84%EB%A1%9C",
@@ -154,6 +155,7 @@ describe("searchListings", () => {
     const result = await searchListings(env, { query: "아이폰 14 프로", includeDetails: false });
 
     expect(result.listings[0].description).toBeNull();
+    expect(result.detail_failures).toBe(0);
     expect(upstream.detailCalls).toEqual([]);
   });
 
@@ -229,7 +231,7 @@ describe("searchListings", () => {
     expect(upstream.searchCursors).toEqual([null, "loop"]);
   });
 
-  it("keeps the listing when its detail request fails", async () => {
+  it("keeps the listing when its detail request fails, and counts it", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request) => {
@@ -242,6 +244,7 @@ describe("searchListings", () => {
     const result = await searchListings(env, { query: "아이폰" });
 
     expect(result.listings).toHaveLength(1);
+    expect(result.detail_failures).toBe(1);
     expect(result.listings[0].price_krw).toBe(700);
     expect(result.listings[0].description).toBeNull();
     expect(result.listings[0].image_urls).toEqual([

@@ -164,6 +164,15 @@ export interface BunjangSearchResult {
   offset: number;
   next_offset: number | null;
   has_more: boolean;
+  /**
+   * Listings whose detail request failed and so carry only search-page
+   * fields (description null, thumbnail only). Always 0 when
+   * include_details is false. Non-zero usually means the Workers
+   * per-invocation subrequest cap was hit: on the free plan that is 50,
+   * shared between search pages and detail fetches, so roughly 48 listings
+   * per call can be enriched. The Python server had no such limit.
+   */
+  detail_failures: number;
   summary: PriceSummary;
   listings: Listing[];
 }
@@ -476,17 +485,20 @@ export async function searchListings(
     offset,
     next_offset: hasMore ? nextIndex : null,
     has_more: hasMore,
+    detail_failures: 0,
     summary: summarize(selected),
     listings: selected,
   };
 
-  if (includeDetails) await enrichListings(env, result.listings);
+  if (includeDetails) result.detail_failures = await enrichListings(env, result.listings);
   return result;
 }
 
-async function enrichListings(env: Env, listings: Listing[]): Promise<void> {
+/** Enriches in place; returns how many listings could not be enriched. */
+async function enrichListings(env: Env, listings: Listing[]): Promise<number> {
   const productIds = [...new Set(listings.map((listing) => listing.product_id))];
   const detailsById = new Map<number, ListingDetails>();
+  let failures = 0;
 
   // Match the Python semaphore: at most DETAIL_CONCURRENCY detail requests in flight.
   let nextIndex = 0;
@@ -497,6 +509,7 @@ async function enrichListings(env: Env, listings: Listing[]): Promise<void> {
       try {
         details = parseProductDetail(await fetchProductDetail(env, productId));
       } catch {
+        failures++;
         details = {
           description: null,
           image_urls: [],
@@ -531,6 +544,7 @@ async function enrichListings(env: Env, listings: Listing[]): Promise<void> {
     listing.free_shipping = detail.free_shipping;
     listing.in_person = detail.in_person;
   }
+  return failures;
 }
 
 // --- MCP server -------------------------------------------------------------------
@@ -579,7 +593,7 @@ function buildServer(env: Env): McpServer {
               include_details: z
                 .boolean()
                 .default(true)
-                .describe("Fetch descriptions and original-size image URLs"),
+                .describe("Fetch descriptions and original-size image URLs (one upstream request per listing; on the current Workers plan about 48 listings per call can be enriched, and detail_failures in the result counts the ones that were not)"),
             }) }, async ({ query, search_word, offset, max_listings, include_details }) => {
               const result = await searchListings(env, {
                 query,
