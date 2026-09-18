@@ -620,26 +620,16 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     // Before routing, not after. There is no path here that serves without an
     // identity, so there is no reason for one to be reachable before the check.
-    const identity = identityFrom(request.headers);
-    if (identity === null) return refused();
+    if (identityFrom(request.headers) === null) return refused();
 
-    const url = new URL(request.url);
-
-    // /healthz and /.well-known/oauth-protected-resource are gone from here.
-    // The gateway answers both now, which is why healthz changed shape: `ok`
-    // as text/plain rather than `{"ok":true}` as JSON. Anything checking the
-    // body rather than the status needs updating.
-    if (url.pathname === "/" || url.pathname === "") {
-      return Response.json({
-        name: "bunjang-mcp",
-        runtime: "cloudflare-workers",
-        mcp_path: "/mcp",
-        caller: { sub: identity.sub, email: identity.email, name: identity.name, role: identity.role },
-        tools: ["bunjang_search"],
-      });
-    }
-
-    if (url.pathname !== "/mcp") {
+    // /healthz and /.well-known/oauth-protected-resource are the gateway's
+    // now (healthz answers `ok` as text/plain, not `{"ok":true}`), and the
+    // Python server's `/` index page has no gateway route at all, so the only
+    // path that can arrive here is /mcp. `/mcp/` is folded in because the
+    // Python server accepted it too and the gateway's `/mcp/*` route
+    // forwards it.
+    const path = new URL(request.url).pathname.replace(/\/+$/, "");
+    if (path !== "/mcp") {
       return new Response("not found", { status: 404 });
     }
 
