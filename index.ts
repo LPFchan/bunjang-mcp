@@ -1,16 +1,18 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 
-// bunjang-mcp Worker: MCP server on Cloudflare Workers, port of the
-// Python bunjang-mcp (Bunjang marketplace search).
+// bunjang-mcp Worker: MCP server for Bunjang marketplace search on
+// Cloudflare Workers. Ported from the Python container that ran on OCI
+// until 2026-09-18; the `python/` tree it came from is in git history.
 //
 // A route-less backend behind the gateway Worker. It authenticates nobody:
 // the gateway has already asked auth.lost.plus who the caller is, and hands
 // the answer over in x-lost-plus-* headers. See identity.ts, and the routes
 // comment in wrangler.toml for why this Worker holds no route of its own.
 //
-// Unlike the Python server there is NO in-memory cache: module-level state
-// does not reliably persist between Worker requests, so every tool call
-// fetches fresh data and always reports from_cache=false.
+// There is NO in-memory cache: module-level state does not reliably persist
+// between Worker requests, so every tool call fetches fresh data and always
+// reports from_cache=false. (The Python server cached for five minutes and
+// exposed a force_refresh argument; both are gone.)
 import { z } from "zod";
 import { identityFrom } from "./identity";
 
@@ -555,7 +557,7 @@ function buildServer(env: Env): McpServer {
     },
   );
 
-  server.registerTool("bunjang_search", { description: "Search Bunjang listings and summarize their current asking prices. Returns matching listings plus average, highest, and lowest asking price for the returned listings. To paginate, pass the returned next_offset as the next call's offset; has_more says whether more listings are available. The in-memory cache from the Python server does not exist on Workers: every call fetches fresh data and from_cache is always false.", inputSchema: z.object({
+  server.registerTool("bunjang_search", { description: "Search Bunjang listings and summarize their current asking prices. Returns matching listings plus average, highest, and lowest asking price for the returned listings. To paginate, pass the returned next_offset as the next call's offset; has_more says whether more listings are available. There is no cache: every call fetches fresh data and from_cache is always false.", inputSchema: z.object({
               query: z.string().describe("Natural-language question or product name to search on Bunjang"),
               search_word: z
                 .string()
