@@ -172,24 +172,38 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+// Integer coercion with the Python parser's `int(x)` shape: a value that is
+// not a number is null rather than NaN, so it never leaks into the price
+// summary or the JSON as a silent `null` mid-computation.
+function asInt(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+}
+
 export function parseSearchResponse(payload: unknown): SearchPage {
   const searchResponse = findSearchResponse(payload);
 
-  const rawItems = searchResponse["data"];
-  const items = Array.isArray(rawItems) ? rawItems : [];
+  // The Python parser raised when the product list was present but not a
+  // list; treating that as "no products" would report an empty page for a
+  // response shape that has actually changed under us.
+  const rawItems = searchResponse["data"] ?? [];
+  if (!Array.isArray(rawItems)) {
+    throw new Error("Bunjang product grid did not contain a product list");
+  }
 
   const listings: Listing[] = [];
-  for (const item of items) {
+  for (const item of rawItems) {
     const record = asRecord(item);
     if (!record || record["type"] !== "PRODUCT" || record["pid"] == null) continue;
     listings.push(parseSearchListing(record));
   }
 
   const rawCursor = searchResponse["cursor"] ?? searchResponse["nextCursor"];
-  const rawTotal = searchResponse["totalCount"];
   return {
-    total_count:
-      rawTotal != null && !Number.isNaN(Number(rawTotal)) ? Number(rawTotal) : listings.length,
+    // `totalCount or len(listings)` in the Python: a missing, unparseable or
+    // zero count falls back to what the page actually holds.
+    total_count: asInt(searchResponse["totalCount"]) || listings.length,
     next_cursor: rawCursor ? String(rawCursor) : null,
     listings,
   };
@@ -202,14 +216,15 @@ function findSearchResponse(payload: unknown): Record<string, unknown> {
 
   const searchSpec = asRecord(data["searchSpec"]);
   if (searchSpec) {
-    const blocks = searchSpec["uiBlockList"];
-    if (Array.isArray(blocks)) {
-      for (const block of blocks) {
-        const record = asRecord(block);
-        if (record && record["blockType"] === "productList.grid.main") {
-          const candidate = asRecord(record["searchResponse"]);
-          if (candidate) return candidate;
-        }
+    const blocks = searchSpec["uiBlockList"] ?? [];
+    if (!Array.isArray(blocks)) {
+      throw new Error("Bunjang search response did not contain UI blocks");
+    }
+    for (const block of blocks) {
+      const record = asRecord(block);
+      if (record && record["blockType"] === "productList.grid.main") {
+        const candidate = asRecord(record["searchResponse"]);
+        if (candidate) return candidate;
       }
     }
   }
@@ -233,7 +248,7 @@ function parseSearchListing(item: Record<string, unknown>): Listing {
   return {
     product_id: productId,
     title: item["name"] != null ? String(item["name"]) : "",
-    price_krw: item["price"] != null ? Number(item["price"]) : 0,
+    price_krw: asInt(item["price"]) ?? 0,
     listing_url: `https://m.bunjang.co.kr/products/${productId}`,
     thumbnail_url: thumbnailUrl,
     description: null,
@@ -243,11 +258,11 @@ function parseSearchListing(item: Record<string, unknown>): Listing {
     updated_at: item["updatedAt"] != null ? String(item["updatedAt"]) : null,
     category_name: null,
     brand_name: null,
-    seller_id: shop["uid"] != null ? Number(shop["uid"]) : null,
+    seller_id: asInt(shop["uid"]),
     seller_name: null,
     official_seller: shop["isOfficialSeller"] != null ? Boolean(shop["isOfficialSeller"]) : null,
-    favorite_count: item["favoriteCount"] != null ? Number(item["favoriteCount"]) : null,
-    chat_count: item["buntalkCount"] != null ? Number(item["buntalkCount"]) : null,
+    favorite_count: asInt(item["favoriteCount"]),
+    chat_count: asInt(item["buntalkCount"]),
     view_count: null,
     free_shipping: null,
     in_person: null,
@@ -268,7 +283,7 @@ export function parseProductDetail(payload: unknown): ListingDetails {
   const brand = asRecord(product["brand"]) ?? {};
   const shop = data ? asRecord(data["shop"]) ?? {} : {};
 
-  const imageCount = product["imageCount"] != null ? Number(product["imageCount"]) : 0;
+  const imageCount = asInt(product["imageCount"]) ?? 0;
 
   return {
     description: product["description"] != null ? String(product["description"]) : null,
@@ -277,7 +292,7 @@ export function parseProductDetail(payload: unknown): ListingDetails {
     category_name: category["name"] != null ? String(category["name"]) : null,
     brand_name: brand["name"] != null ? String(brand["name"]) : null,
     seller_name: shop["name"] != null ? String(shop["name"]) : null,
-    view_count: metrics["viewCount"] != null ? Number(metrics["viewCount"]) : null,
+    view_count: asInt(metrics["viewCount"]),
     free_shipping: trade["freeShipping"] != null ? Boolean(trade["freeShipping"]) : null,
     in_person: trade["inPerson"] != null ? Boolean(trade["inPerson"]) : null,
   };
