@@ -525,7 +525,20 @@ function text(value: unknown): { content: Array<{ type: "text"; text: string }> 
 }
 
 function buildServer(env: Env): McpServer {
-  const server = new McpServer({ name: "bunjang-mcp", version: "0.1.0" });
+  const server = new McpServer(
+    { name: "bunjang-mcp", version: "0.1.0" },
+    {
+      // 2026-07-28 clients cache the tool list for five minutes instead of
+      // re-listing on every session. `private` because the cache scope is a
+      // promise about every caller and every deployment; the list happens to
+      // be the same for everyone today, but nothing here enforces that.
+      // 2025-era clients never see these fields.
+      cacheHints: {
+        "tools/list": { ttlMs: 300_000, cacheScope: "private" },
+        "server/discover": { ttlMs: 300_000, cacheScope: "private" },
+      },
+    },
+  );
 
   server.registerTool("bunjang_search", { description: "Search Bunjang listings and summarize their current asking prices. Returns matching listings plus average, highest, and lowest asking price for the returned listings. To paginate, pass the returned next_offset as the next call's offset; has_more says whether more listings are available. The in-memory cache from the Python server does not exist on Workers: every call fetches fresh data and from_cache is always false.", inputSchema: z.object({
               query: z.string().describe("Natural-language question or product name to search on Bunjang"),
