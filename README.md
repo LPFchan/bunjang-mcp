@@ -1,12 +1,7 @@
 # Bunjang MCP
 
-An MCP server for searching public listings on [Bunjang](https://m.bunjang.co.kr).
-
-Two runtimes:
-
-- **Cloudflare Workers** (root) — the primary deployment. Runs on Cloudflare's
-  edge and validates tokens directly against auth.lost.plus.
-- **Python** (`python/`) — the original server, kept as the local-dev fallback.
+An MCP server for searching public listings on [Bunjang](https://m.bunjang.co.kr),
+running as a Cloudflare Worker behind the Common Auth gateway.
 
 ## Tools
 
@@ -18,50 +13,10 @@ Results default to 20 listings. To continue, pass the returned `next_offset` as 
 
 The summary describes current asking prices among the listings returned by that call. It is not a sold-price history. External shopping ads are excluded from listings and price calculations. `max_listings` is limited to 60 per call.
 
-**No cache on Workers.** The Python server caches search pages and product
-details in memory (`BUNJANG_CACHE_TTL_SECONDS`, default 300s). Module-level
-caches do not reliably persist between Worker requests, so the Worker drops the
-cache entirely: every call fetches fresh data from Bunjang and always reports
-`from_cache: false`. The Python tool's `force_refresh` parameter is gone for
-the same reason. Expect detail-enriched calls (`include_details=true`) to be
-slower than warm-cache Python responses.
-
-## Deploy (Workers)
-
-```sh
-npm install
-npm run typecheck   # tsc --noEmit
-npm test            # vitest: ports of the Python parser/normalize tests
-npx wrangler deploy
-```
-
-This Worker holds no routes. `bunjang.lost.plus/mcp`, `/mcp/*`, `/healthz` and
-`/.well-known/oauth-protected-resource*` are served by the `auth-gateway`
-Worker, which reaches this one over its `BUNJANG` service binding. That binding
-is the only way in — see the routes comment in `wrangler.toml` before changing
-either side.
-
-Callers are unaffected: send a Common Auth token as
-`Authorization: Bearer <token>` or `X-API-Key: <token>` (scope `bunjang`) to the
-same URL as before, and machine tokens and OAuth access tokens are both still
-accepted. What changed is who checks it. The gateway validates the credential,
-strips it, and passes the caller down in `x-lost-plus-*` headers; this Worker
-reads those and never sees a token (`identity.ts`).
-
-`/healthz` is the gateway's answer now, so it returns `ok` as `text/plain`
-rather than `{"ok":true}` as JSON. Anything checking the body rather than the
-status needs updating.
-
-No secrets are required for this service; everything is plain `[vars]` in
-`wrangler.toml`. `AUTH_URL` and `TOKEN_SCOPE` are gone — the scope lives in the
-gateway's route table at `auth/gateway/config/cloudflare.gateway.json`.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `BUNJANG_BASE_URL` | `https://m.bunjang.co.kr` | Public listing-page base URL |
-| `BUNJANG_API_BASE_URL` | `https://api.bunjang.co.kr` | Public JSON API base URL |
-| `BUNJANG_TIMEOUT_SECONDS` | `20` | Upstream request timeout |
-| `BUNJANG_USER_AGENT` | Safari-compatible value | Upstream HTTP user agent |
+There is no cache. Module-level state does not reliably persist between
+Worker requests, so every call fetches fresh data from Bunjang and always
+reports `from_cache: false`. Detail-enriched calls (`include_details=true`)
+make one upstream request per listing, up to eight at a time.
 
 ## Usage
 
@@ -79,25 +34,65 @@ gateway's route table at `auth/gateway/config/cloudflare.gateway.json`.
 }
 ```
 
-## Local dev (Python fallback)
+Send a Common Auth token as `Authorization: Bearer <token>` or
+`X-API-Key: <token>` (scope `bunjang`). Machine tokens and OAuth access
+tokens are both accepted. Clients speaking MCP `2026-07-28`, `2025-06-18`
+and `2025-03-26` are all served; `2026-07-28` clients are told to cache the
+tool list for five minutes.
 
-Requires Python 3.11 or newer.
+## How it is reached
 
-```sh
-cd python
-python -m venv .venv
-.venv/bin/pip install -e '.[dev]'
-.venv/bin/python -m bunjang_mcp.server
+```
+client -> bunjang.lost.plus/mcp -> auth-gateway Worker -> [BUNJANG service binding] -> this Worker
 ```
 
-Or run `docker compose up --build` from `python/`. Compose publishes the
-service at `127.0.0.1:8004` so it can run beside the other MCP services on
-the production host.
+- **Routes.** This Worker holds none (`wrangler.toml` has no `routes`,
+  `workers_dev = false`). `bunjang.lost.plus/mcp`, `/mcp/*`, `/healthz` and
+  `/.well-known/oauth-protected-resource*` are zone routes on the
+  `auth-gateway` Worker (`auth/gateway/wrangler.toml`).
+- **Auth.** The gateway's route table
+  (`auth/gateway/config/cloudflare.gateway.json`) has
+  `{"host": "bunjang.lost.plus", "policy": "mcp", "token_scope": "bunjang",
+  "binding": "BUNJANG"}`. The gateway validates the credential with the hub,
+  strips it, and forwards over the `BUNJANG` service binding with the caller
+  in `x-lost-plus-{sub,email,name,role,encoding}` headers. This Worker reads
+  those (`identity.ts`) and never sees a token. A request without a complete
+  identity is refused with 500, because nothing but the gateway can reach
+  this Worker and such a request means the deployment is wrong.
+- **Gateway-answered paths.** `/healthz` returns `ok` as `text/plain`;
+  `/.well-known/oauth-protected-resource/mcp` is the OAuth metadata document;
+  a bad or missing token gets a 401 with a `WWW-Authenticate` challenge. None
+  of those reach this Worker, which serves `/mcp` (and `/mcp/`) only.
+- **State.** None. No D1, KV or R2; everything is plain `[vars]`.
 
-The Python server keeps its in-memory cache and its `force_refresh` tool
-parameter, and reads `BUNJANG_CACHE_TTL_SECONDS`, `ALLOWED_ORIGINS`, and
-friends from `python/.env.example`. The MCP endpoint is `/mcp`; `/healthz`
-is available without authentication. The server uses the official MCP Python
-SDK v2 and supports the stateless `2026-07-28` protocol through
-`server/discover`, with a stateless legacy fallback for clients that still
-use `initialize`.
+## Deploy
+
+```sh
+npm install
+npm run typecheck   # tsc --noEmit
+npm test            # vitest
+npm run deploy      # wrangler deploy
+```
+
+Deploying only replaces this Worker's code; routes live on the gateway and
+are untouched. To roll back, `git revert` (or check out the previous commit)
+and `npm run deploy` again. Adding a route to this Worker's `wrangler.toml`
+would steal it from the gateway and expose an unauthenticated entrance; see
+the comment there.
+
+No secrets are required. Configuration:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BUNJANG_BASE_URL` | `https://m.bunjang.co.kr` | Public listing-page base URL |
+| `BUNJANG_API_BASE_URL` | `https://api.bunjang.co.kr` | Public JSON API base URL |
+| `BUNJANG_TIMEOUT_SECONDS` | `20` | Upstream request timeout |
+| `BUNJANG_USER_AGENT` | Safari-compatible value | Upstream HTTP user agent |
+
+## History
+
+Until 2026-09-18 this ran as a Python container (`python/`, FastMCP, port
+8004 on `oci-ubuntu` behind the Cloudflare tunnel and the local Rust
+gateway). The Worker port replaced it; `python/` was removed on 2026-09-19
+once its tests were ported to `test/`. The Python server's in-memory cache
+and `force_refresh` argument did not survive the port.
