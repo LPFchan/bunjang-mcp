@@ -15,6 +15,15 @@ describe("normalizeSearchWord", () => {
   it("rejects a blank query", () => {
     expect(() => normalizeSearchWord("   ")).toThrow();
   });
+
+  it("falls back to the raw text when every word is noise", () => {
+    expect(normalizeSearchWord("a")).toBe("a");
+    expect(() => normalizeSearchWord("?!")).toThrow(/usable search term/);
+  });
+
+  it("strips storage units and punctuation", () => {
+    expect(normalizeSearchWord("iPhone 14 Pro Max 256GB, unlocked")).toBe("아이폰14프로맥스256unlocked");
+  });
 });
 
 describe("parseSearchResponse", () => {
@@ -83,6 +92,44 @@ describe("parseSearchResponse", () => {
     expect(result.total_count).toBe(120);
     expect(result.next_cursor).toBe("page-3-cursor");
     expect(result.listings[0].product_id).toBe(428113081);
+  });
+
+  it("falls back to the page size when totalCount is missing or zero", () => {
+    const grid = (searchResponse: Record<string, unknown>) => ({
+      data: { responses: { mainGrid: { searchResponse } } },
+    });
+    const items = [{ pid: 1, price: 100, type: "PRODUCT" }];
+    expect(parseSearchResponse(grid({ data: items })).total_count).toBe(1);
+    expect(parseSearchResponse(grid({ totalCount: 0, data: items })).total_count).toBe(1);
+    expect(parseSearchResponse(grid({ totalCount: "7", data: items })).total_count).toBe(7);
+  });
+
+  it("does not turn junk numbers into NaN", () => {
+    const result = parseSearchResponse({
+      data: {
+        responses: {
+          mainGrid: {
+            searchResponse: {
+              data: [{ pid: 1, price: "not a price", favoriteCount: "x", type: "PRODUCT" }],
+            },
+          },
+        },
+      },
+    });
+    expect(result.listings[0].price_krw).toBe(0);
+    expect(result.listings[0].favorite_count).toBeNull();
+  });
+
+  it("rejects a response whose shape has changed", () => {
+    expect(() => parseSearchResponse({})).toThrow(/did not contain data/);
+    expect(() => parseSearchResponse({ data: {} })).toThrow(/product grid/);
+    expect(() => parseSearchResponse({ data: { searchSpec: { uiBlockList: "nope" } } })).toThrow(
+      /UI blocks/,
+    );
+    expect(() =>
+      parseSearchResponse({ data: { responses: { mainGrid: { searchResponse: { data: {} } } } } }),
+    ).toThrow(/product list/);
+    expect(() => parseProductDetail({ data: {} })).toThrow(/product data/);
   });
 });
 
