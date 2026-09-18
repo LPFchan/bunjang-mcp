@@ -1,18 +1,20 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 
 // bunjang-mcp Worker: MCP server on Cloudflare Workers, port of the
-// Python bunjang-mcp (Bunjang marketplace search). Authenticates machine
-// tokens directly against Common Auth (whoami) instead of the loopback
-// gateway.
+// Python bunjang-mcp (Bunjang marketplace search).
+//
+// A route-less backend behind the gateway Worker. It authenticates nobody:
+// the gateway has already asked auth.lost.plus who the caller is, and hands
+// the answer over in x-lost-plus-* headers. See identity.ts, and the routes
+// comment in wrangler.toml for why this Worker holds no route of its own.
 //
 // Unlike the Python server there is NO in-memory cache: module-level state
 // does not reliably persist between Worker requests, so every tool call
 // fetches fresh data and always reports from_cache=false.
 import { z } from "zod";
+import { identityFrom } from "./identity";
 
 export interface Env {
-  AUTH_URL: string;
-  TOKEN_SCOPE: string;
   BUNJANG_BASE_URL: string;
   BUNJANG_API_BASE_URL: string;
   BUNJANG_TIMEOUT_SECONDS: string;
@@ -23,85 +25,6 @@ const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
 
 const DETAIL_CONCURRENCY = 8;
-
-// --- auth --------------------------------------------------------------------
-
-interface Identity {
-  sub: string;
-  email: string;
-  name: string;
-  role: string;
-  services?: string[];
-}
-
-// Validate a credential against Common Auth. Two token types:
-//   - machine tokens: GET /api/whoami?service=<scope>
-//   - OAuth access tokens: GET /api/oauth/introspect?resource=<resource>&scope=<scope>
-// Try whoami first (machine tokens), then introspect (OAuth). Mirrors the gateway.
-async function validateToken(env: Env, token: string, requestUrl: string): Promise<Identity | null> {
-  const resource = new URL(requestUrl).origin + "/mcp";
-
-  // Machine token path
-  try {
-    const url = new URL("/api/whoami", env.AUTH_URL);
-    url.searchParams.set("service", env.TOKEN_SCOPE);
-    const resp = await fetch(url.toString(), {
-      headers: { authorization: "Bearer " + token },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (resp.ok) {
-      const identity = (await resp.json()) as Identity;
-      if (
-        identity.sub &&
-        identity.email &&
-        identity.name &&
-        (identity.role === "administrator" || identity.role === "user")
-      ) {
-        return identity;
-      }
-    }
-  } catch { /* fall through to introspect */ }
-
-  // OAuth access token path
-  try {
-    const url = new URL("/api/oauth/introspect", env.AUTH_URL);
-    url.searchParams.set("resource", resource);
-    url.searchParams.set("scope", env.TOKEN_SCOPE);
-    const resp = await fetch(url.toString(), {
-      headers: { authorization: "Bearer " + token },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (resp.ok) {
-      const identity = (await resp.json()) as Identity;
-      if (
-        identity.sub &&
-        identity.email &&
-        identity.name &&
-        (identity.role === "administrator" || identity.role === "user")
-      ) {
-        return identity;
-      }
-    }
-  } catch { /* reject */ }
-
-  return null;
-}
-
-function extractToken(request: Request): string | null {
-  const auth = request.headers.get("authorization");
-  if (auth && auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
-  const apiKey = request.headers.get("x-api-key");
-  if (apiKey) return apiKey.trim();
-  return null;
-}
-
-// MCP OAuth 2.0 Protected Resource Metadata — required by MCP clients
-// (Claude.ai, etc.) to discover the authorization server.
-function wwwAuthenticate(request: Request): string {
-  const url = new URL(request.url);
-  const metadata = url.origin + "/.well-known/oauth-protected-resource/mcp";
-  return 'Bearer realm="auth.lost.plus", resource_metadata="' + metadata + '", scope="bunjang", error="invalid_token"';
-}
 
 // --- query normalization (port of normalize.py) -------------------------------
 
@@ -641,94 +564,65 @@ function buildServer(env: Env): McpServer {
   return server;
 }
 
-// --- CORS (permissive: reflect the request origin) --------------------------------
-
-function corsHeaders(origin: string | null): Record<string, string> {
-  const h: Record<string, string> = {
-    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
-    "access-control-allow-headers":
-      "authorization, content-type, accept, mcp-session-id, mcp-protocol-version, mcp-method, mcp-name, last-event-id, x-api-key",
-    "access-control-max-age": "86400",
-    "access-control-expose-headers": "mcp-session-id, mcp-protocol-version, content-type",
-  };
-  if (origin) h["access-control-allow-origin"] = origin;
-  return h;
-}
-
 // --- entry -------------------------------------------------------------------------
+
+/**
+ * No identity headers, so no service.
+ *
+ * The only way to reach this Worker is through a service binding declared by
+ * another Worker in the account, and the only Worker that declares one is the
+ * gateway, which never forwards a request it has not authorized. So arriving
+ * here without an identity means the deployment is wrong -- the gateway's
+ * route for this host lost its `mcp` policy, or something else in the account
+ * bound to this Worker directly.
+ *
+ * 500 rather than 401, because it is true. A 401 would tell the caller to
+ * authenticate, and the caller may well have done so correctly; the fault is
+ * on this side of the binding. Serving the tools anyway is the specific
+ * failure the whole gateway arrangement exists to prevent, so this refuses.
+ */
+function refused(): Response {
+  return Response.json(
+    { error: "no gateway identity", detail: "this service is only reachable through the gateway" },
+    { status: 500 },
+  );
+}
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // Before routing, not after. There is no path here that serves without an
+    // identity, so there is no reason for one to be reachable before the check.
+    const identity = identityFrom(request.headers);
+    if (identity === null) return refused();
+
     const url = new URL(request.url);
-    const origin = request.headers.get("origin");
 
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders(origin) });
-    }
-
-    if (url.pathname === "/healthz") {
-      return Response.json({ ok: true }, { headers: corsHeaders(origin) });
-    }
-
-    // Serve the OAuth protected-resource metadata so the whole discovery
-    // chain works even when the auth gateway is down.
-    if (
-      url.pathname === "/.well-known/oauth-protected-resource" ||
-      url.pathname === "/.well-known/oauth-protected-resource/mcp"
-    ) {
-      return Response.json(
-        {
-          authorization_servers: ["https://auth.lost.plus"],
-          bearer_methods_supported: ["header"],
-          resource: url.origin + "/mcp",
-          scopes_supported: ["bunjang"],
-        },
-        { headers: { ...corsHeaders(origin), "cache-control": "no-store" } },
-      );
-    }
-
+    // /healthz and /.well-known/oauth-protected-resource are gone from here.
+    // The gateway answers both now, which is why healthz changed shape: `ok`
+    // as text/plain rather than `{"ok":true}` as JSON. Anything checking the
+    // body rather than the status needs updating.
     if (url.pathname === "/" || url.pathname === "") {
-      return Response.json(
-        {
-          name: "bunjang-mcp",
-          runtime: "cloudflare-workers",
-          mcp_path: "/mcp",
-          healthz: "/healthz",
-          tools: ["bunjang_search"],
-        },
-        { headers: corsHeaders(origin) },
-      );
+      return Response.json({
+        name: "bunjang-mcp",
+        runtime: "cloudflare-workers",
+        mcp_path: "/mcp",
+        caller: { sub: identity.sub, email: identity.email, name: identity.name, role: identity.role },
+        tools: ["bunjang_search"],
+      });
     }
 
     if (url.pathname !== "/mcp") {
-      return new Response("not found", { status: 404, headers: corsHeaders(origin) });
-    }
-
-    // Auth: every /mcp request must carry a valid scoped token.
-    const token = extractToken(request);
-    if (!token) {
-      return new Response(JSON.stringify({ error: "authentication required" }), {
-        status: 401,
-        headers: { ...corsHeaders(origin), "content-type": "application/json", "www-authenticate": wwwAuthenticate(request) },
-      });
-    }
-    const identity = await validateToken(env, token, request.url);
-    if (!identity) {
-      return new Response(JSON.stringify({ error: "authentication required" }), {
-        status: 401,
-        headers: { ...corsHeaders(origin), "content-type": "application/json", "www-authenticate": wwwAuthenticate(request) },
-      });
+      return new Response("not found", { status: 404 });
     }
 
     // Dual-era MCP: createMcpHandler serves 2026-07-28 (stateless, per-request)
     // and legacy 2025-era clients through the stateless handshake fallback.
     // A fresh handler per request closes over env; each McpServer instance the
     // factory builds is itself per-request.
-    const response = await createMcpHandler(() => buildServer(env)).fetch(request);
-    // Attach CORS headers to the MCP response.
-    const headers = new Headers(response.headers);
-    for (const [k, v] of Object.entries(corsHeaders(origin))) headers.set(k, v);
-    headers.set("vary", "Origin");
-    return new Response(response.body, { status: response.status, headers });
+    //
+    // CORS is the gateway's now: under the `mcp` policy it strips
+    // access-control-allow-origin and -expose-headers from whatever the
+    // backend returns and sets its own (gateway src/responseRewrite.ts).
+    return createMcpHandler(() => buildServer(env)).fetch(request);
   },
 };
