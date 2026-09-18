@@ -167,10 +167,9 @@ export interface BunjangSearchResult {
   /**
    * Listings whose detail request failed and so carry only search-page
    * fields (description null, thumbnail only). Always 0 when
-   * include_details is false. Non-zero usually means the Workers
-   * per-invocation subrequest cap was hit: on the free plan that is 50,
-   * shared between search pages and detail fetches, so roughly 48 listings
-   * per call can be enriched. The Python server had no such limit.
+   * include_details is false. Enrichment is one upstream request per
+   * listing and any of them can fail (Bunjang error, timeout, or a Workers
+   * subrequest limit), so a partial result is reported rather than hidden.
    */
   detail_failures: number;
   summary: PriceSummary;
@@ -593,7 +592,7 @@ function buildServer(env: Env): McpServer {
               include_details: z
                 .boolean()
                 .default(true)
-                .describe("Fetch descriptions and original-size image URLs (one upstream request per listing; on the current Workers plan about 48 listings per call can be enriched, and detail_failures in the result counts the ones that were not)"),
+                .describe("Fetch descriptions and original-size image URLs (one upstream request per listing; enrichment can partially fail, and detail_failures in the result counts the listings that came back with search-page fields only)"),
             }) }, async ({ query, search_word, offset, max_listings, include_details }) => {
               const result = await searchListings(env, {
                 query,

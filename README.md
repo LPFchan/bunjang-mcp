@@ -18,13 +18,10 @@ Worker requests, so every call fetches fresh data from Bunjang and always
 reports `from_cache: false`.
 
 Detail-enriched calls (`include_details=true`) make one upstream request per
-listing, up to eight at a time. Cloudflare caps a Worker invocation at 50
-subrequests on the free plan (1000 on paid), shared between the search pages
-and the detail fetches, so about 48 listings per call can be enriched;
-listings past that come back with search-page fields only, and
-`detail_failures` in the result counts them. Measured 2026-09-19:
-`max_listings=60` enriches exactly the first 48, `max_listings=49` enriches
-all 49.
+listing, up to eight at a time. Any of those can fail (a Bunjang error, a
+timeout, or a Workers subrequest limit); the listing is still returned with
+its search-page fields only, and `detail_failures` in the result counts how
+many came back that way. A partial result is reported, never hidden.
 
 ## Usage
 
