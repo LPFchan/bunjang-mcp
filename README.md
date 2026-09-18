@@ -35,19 +35,29 @@ npm test            # vitest: ports of the Python parser/normalize tests
 npx wrangler deploy
 ```
 
-The Worker serves `bunjang.lost.plus` for `/mcp`, `/mcp/*`, `/healthz`,
-and `/.well-known/oauth-protected-resource*` (see `wrangler.toml` routes).
+This Worker holds no routes. `bunjang.lost.plus/mcp`, `/mcp/*`, `/healthz` and
+`/.well-known/oauth-protected-resource*` are served by the `auth-gateway`
+Worker, which reaches this one over its `BUNJANG` service binding. That binding
+is the only way in — see the routes comment in `wrangler.toml` before changing
+either side.
+
+Callers are unaffected: send a Common Auth token as
+`Authorization: Bearer <token>` or `X-API-Key: <token>` (scope `bunjang`) to the
+same URL as before, and machine tokens and OAuth access tokens are both still
+accepted. What changed is who checks it. The gateway validates the credential,
+strips it, and passes the caller down in `x-lost-plus-*` headers; this Worker
+reads those and never sees a token (`identity.ts`).
+
+`/healthz` is the gateway's answer now, so it returns `ok` as `text/plain`
+rather than `{"ok":true}` as JSON. Anything checking the body rather than the
+status needs updating.
 
 No secrets are required for this service; everything is plain `[vars]` in
-`wrangler.toml`. Auth tokens are validated against Common Auth per request —
-send a Common Auth token as `Authorization: Bearer <token>` or
-`X-API-Key: <token>` (scope `bunjang`). Machine tokens and OAuth access
-tokens are both accepted.
+`wrangler.toml`. `AUTH_URL` and `TOKEN_SCOPE` are gone — the scope lives in the
+gateway's route table at `auth/gateway/config/cloudflare.gateway.json`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `AUTH_URL` | `https://auth.lost.plus` | Common Auth base URL |
-| `TOKEN_SCOPE` | `bunjang` | Required token scope |
 | `BUNJANG_BASE_URL` | `https://m.bunjang.co.kr` | Public listing-page base URL |
 | `BUNJANG_API_BASE_URL` | `https://api.bunjang.co.kr` | Public JSON API base URL |
 | `BUNJANG_TIMEOUT_SECONDS` | `20` | Upstream request timeout |
