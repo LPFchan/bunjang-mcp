@@ -5,7 +5,7 @@
 //
 // The cache-related assertions from the Python suite (second call served
 // from cache, from_cache flipping true) have no Worker equivalent: there is
-// no cache, and from_cache is pinned to false. That is asserted instead.
+// no cache and no from_cache field. Two identical calls hit upstream twice.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { searchListings, type Env } from "../index";
@@ -109,7 +109,7 @@ afterEach(() => {
 });
 
 describe("searchListings", () => {
-  it("enriches listings with details and never reports a cache hit", async () => {
+  it("enriches listings with details and never serves from a cache", async () => {
     const upstream = stubUpstream(
       new Map([[null, initialPayload([product(431514555, 430000)], 1, null)]]),
     );
@@ -117,8 +117,7 @@ describe("searchListings", () => {
     const first = await searchListings(env, { query: "아이폰 14 프로" });
     const second = await searchListings(env, { query: "아이폰 14 프로" });
 
-    expect(first.from_cache).toBe(false);
-    expect(second.from_cache).toBe(false);
+    expect(second.listings).toEqual(first.listings);
     expect(first.detail_failures).toBe(0);
     expect(first.search_word).toBe("아이폰14프로");
     expect(first.source_url).toBe(

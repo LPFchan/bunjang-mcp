@@ -6,15 +6,16 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 //
 // A route-less backend behind the gateway Worker. It authenticates nobody:
 // the gateway has already asked auth.lost.plus who the caller is, and hands
-// the answer over in x-lost-plus-* headers. See identity.ts, and the routes
-// comment in wrangler.toml for why this Worker holds no route of its own.
+// the answer over in x-lost-plus-* headers, read by the shared
+// @lost-plus/gateway-identity parser. See the routes comment in wrangler.toml
+// for why this Worker holds no route of its own.
 //
 // There is NO in-memory cache: module-level state does not reliably persist
-// between Worker requests, so every tool call fetches fresh data and always
-// reports from_cache=false. (The Python server cached for five minutes and
-// exposed a force_refresh argument; both are gone.)
+// between Worker requests, so every tool call fetches fresh data. (The Python
+// server cached for five minutes and exposed a force_refresh argument and a
+// from_cache field; all three are gone.)
+import { identityFrom } from "@lost-plus/gateway-identity";
 import { z } from "zod";
-import { identityFrom } from "./identity";
 
 export interface Env {
   BUNJANG_BASE_URL: string;
@@ -159,7 +160,6 @@ export interface BunjangSearchResult {
   search_word: string;
   source_url: string;
   fetched_at: string;
-  from_cache: boolean;
   total_count: number;
   offset: number;
   next_offset: number | null;
@@ -479,7 +479,6 @@ export async function searchListings(
     search_word: effectiveSearchWord,
     source_url: sourceUrl,
     fetched_at: fetchedAt,
-    from_cache: false,
     total_count: totalCount,
     offset,
     next_offset: hasMore ? nextIndex : null,
@@ -570,7 +569,7 @@ function buildServer(env: Env): McpServer {
     },
   );
 
-  server.registerTool("bunjang_search", { description: "Search Bunjang listings and summarize their current asking prices. Returns matching listings plus average, highest, and lowest asking price for the returned listings. To paginate, pass the returned next_offset as the next call's offset; has_more says whether more listings are available. There is no cache: every call fetches fresh data and from_cache is always false.", inputSchema: z.object({
+  server.registerTool("bunjang_search", { description: "Search Bunjang listings and summarize their current asking prices. Returns matching listings plus average, highest, and lowest asking price for the returned listings. To paginate, pass the returned next_offset as the next call's offset; has_more says whether more listings are available. There is no cache: every call fetches fresh data.", inputSchema: z.object({
               query: z.string().describe("Natural-language question or product name to search on Bunjang"),
               search_word: z
                 .string()

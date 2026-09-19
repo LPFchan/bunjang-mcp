@@ -14,8 +14,7 @@ Results default to 20 listings. To continue, pass the returned `next_offset` as 
 The summary describes current asking prices among the listings returned by that call. It is not a sold-price history. External shopping ads are excluded from listings and price calculations. `max_listings` is limited to 60 per call.
 
 There is no cache. Module-level state does not reliably persist between
-Worker requests, so every call fetches fresh data from Bunjang and always
-reports `from_cache: false`.
+Worker requests, so every call fetches fresh data from Bunjang.
 
 Detail-enriched calls (`include_details=true`) make one upstream request per
 listing, up to eight at a time. Any of those can fail (a Bunjang error, a
@@ -61,7 +60,9 @@ client -> bunjang.lost.plus/mcp -> auth-gateway Worker -> [BUNJANG service bindi
   "binding": "BUNJANG"}`. The gateway validates the credential with the hub,
   strips it, and forwards over the `BUNJANG` service binding with the caller
   in `x-lost-plus-{sub,email,name,role,encoding}` headers. This Worker reads
-  those (`identity.ts`) and never sees a token. A request without a complete
+  those with the shared
+  [`@lost-plus/gateway-identity`](https://github.com/LPFchan/gateway-identity)
+  package and never sees a token. A request without a complete
   identity is refused with 500, because nothing but the gateway can reach
   this Worker and such a request means the deployment is wrong.
 - **Gateway-answered paths.** `/healthz` returns `ok` as `text/plain`;
@@ -103,5 +104,5 @@ No secrets are required. Configuration:
 Until 2026-09-18 this ran as a Python container (`python/`, FastMCP, port
 8004 on `oci-ubuntu` behind the Cloudflare tunnel and the local Rust
 gateway). The Worker port replaced it; `python/` was removed on 2026-09-19
-once its tests were ported to `test/`. The Python server's in-memory cache
-and `force_refresh` argument did not survive the port.
+once its tests were ported to `test/`. The Python server's in-memory cache,
+`force_refresh` argument and `from_cache` field did not survive the port.
