@@ -76,8 +76,12 @@ client -> bunjang.lost.plus/mcp -> auth-gateway Worker -> [BUNJANG service bindi
 npm install
 npm run typecheck   # tsc --noEmit
 npm test            # vitest
-npm run deploy      # wrangler deploy
+npm run deploy      # passage run --env CLOUDFLARE_API_TOKEN=infra/CF_MASTER_TOKEN -- wrangler deploy
 ```
+
+The deploy token comes from passage at deploy time (`infra` /
+`CF_MASTER_TOKEN`, through the `passage` setup module); an already-exported
+`CLOUDFLARE_API_TOKEN` wins if one is set.
 
 Deploying only replaces this Worker's code; routes live on the gateway and
 are untouched. To roll back, `git revert` (or check out the previous commit)
