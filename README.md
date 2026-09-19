@@ -61,7 +61,7 @@ client -> bunjang.lost.plus/mcp -> auth-gateway Worker -> [BUNJANG service bindi
   strips it, and forwards over the `BUNJANG` service binding with the caller
   in `x-lost-plus-{sub,email,name,role,encoding}` headers. This Worker reads
   those with the shared
-  [`@lpfchan/gateway-identity`](https://github.com/LPFchan/gateway-identity)
+  [`@lpfchan/gateway-identity`](https://github.com/LPFchan/auth/tree/main/packages/gateway-identity)
   package and never sees a token. A request without a complete
   identity is refused with 500, because nothing but the gateway can reach
   this Worker and such a request means the deployment is wrong.
